@@ -67,6 +67,15 @@ class PublisherTest(unittest.TestCase):
             with self.assertRaises(ValueError):
                 metadata_from_badging(self.badging.replace("versionCode='33'", f"versionCode='{value}'"))
 
+    def test_stable_channel_uses_production_package_and_plain_version(self):
+        self.signers["stable"] = "a" * 64
+        previous = dict(self.previous, channel="stable", applicationId="com.andinem.audioguitartuner")
+        release = copy.deepcopy(self.release)
+        release.update(prerelease=False, tag_name="v3.5.0")
+        release["assets"][0]["browser_download_url"] = release["assets"][0]["browser_download_url"].replace("-beta12/", "/")
+        badging = self.badging.replace(".beta'", "'").replace("3.5.0-beta12", "3.5.0")
+        self.assertEqual("stable", self.make(release=release, badging=badging, previous=previous)["channel"])
+
 
 if __name__ == "__main__":
     unittest.main()
