@@ -93,6 +93,12 @@ def main():
     pending = target.with_suffix(".tmp")
     pending.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     pending.replace(target)
+    if channel == "stable":
+        latest = manifest["latest"]
+        legacy = {"versionCode": latest["versionCode"], "versionName": latest["versionName"],
+                  "updateUrl": latest["apkUrl"], "releaseNotes": latest["releaseNotes"]}
+        (args.root / "channels" / "legacy-update.json").write_text(
+            json.dumps(legacy, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"Prepared {channel}: {manifest['latest']['versionName']} ({manifest['latest']['versionCode']})")
 
 
