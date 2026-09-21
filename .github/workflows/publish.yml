@@ -1,0 +1,67 @@
+name: Publish update feed
+on:
+  release:
+    types: [published, edited]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag; leave empty to run validation only"
+        required: false
+        type: string
+  push:
+    paths: ['scripts/**', '.github/workflows/**', 'signers.json']
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: update-feed
+  cancel-in-progress: false
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py' -v
+  publish:
+    needs: test
+    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.tag != '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - run: sdkmanager "build-tools;34.0.0"
+      - name: Download published APK and release metadata
+        shell: bash
+        run: |
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" > "$RUNNER_TEMP/release.json"
+          gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --dir "$RUNNER_TEMP/update-apk"
+      - name: Verify APK and prepare channel manifest
+        shell: bash
+        run: |
+          python3 scripts/publish_manifest.py \
+            --release-json "$RUNNER_TEMP/release.json" \
+            --apk-dir "$RUNNER_TEMP/update-apk" \
+            --aapt "$ANDROID_HOME/build-tools/34.0.0/aapt" \
+            --apksigner "$ANDROID_HOME/build-tools/34.0.0/apksigner"
+      - name: Publish verified manifest
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add channels/stable.json channels/beta.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update release channel manifest"
+            git push origin HEAD:main
+          fi
